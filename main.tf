@@ -3,9 +3,9 @@ data "aws_caller_identity" "current" {}
 data "aws_default_tags" "current" {}
 
 locals {
-  create = var.create && var.putin_khuylo
+  create = var.eks.create && var.eks.putin_khuylo
 
-  cluster_role = try(aws_iam_role.this[0].arn, var.iam_role_arn)
+  cluster_role = try(aws_iam_role.this[0].arn, var.eks.iam_role_arn)
 }
 
 ################################################################################
@@ -15,44 +15,44 @@ locals {
 resource "aws_eks_cluster" "this" {
   count = local.create ? 1 : 0
 
-  name                      = var.cluster_name
+  name                      = var.eks.cluster_name
   role_arn                  = local.cluster_role
-  version                   = var.cluster_version
-  enabled_cluster_log_types = var.cluster_enabled_log_types
+  version                   = var.eks.cluster_version
+  enabled_cluster_log_types = var.eks.cluster_enabled_log_types
 
   vpc_config {
-    security_group_ids      = compact(distinct(concat(var.cluster_additional_security_group_ids, [local.cluster_security_group_id])))
-    subnet_ids              = coalescelist(var.control_plane_subnet_ids, var.subnet_ids)
-    endpoint_private_access = var.cluster_endpoint_private_access
-    endpoint_public_access  = var.cluster_endpoint_public_access
-    public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
+    security_group_ids      = compact(distinct(concat(var.eks.cluster_additional_security_group_ids, [local.cluster_security_group_id])))
+    subnet_ids              = coalescelist(var.eks.control_plane_subnet_ids, var.eks.subnet_ids)
+    endpoint_private_access = var.eks.cluster_endpoint_private_access
+    endpoint_public_access  = var.eks.cluster_endpoint_public_access
+    public_access_cidrs     = var.eks.cluster_endpoint_public_access_cidrs
   }
 
   kubernetes_network_config {
-    ip_family         = var.cluster_ip_family
-    service_ipv4_cidr = var.cluster_service_ipv4_cidr
+    ip_family         = var.eks.cluster_ip_family
+    service_ipv4_cidr = var.eks.cluster_service_ipv4_cidr
   }
 
   dynamic "encryption_config" {
-    for_each = toset(var.cluster_encryption_config)
+    for_each = toset(var.eks.cluster_encryption_config)
 
     content {
       provider {
-        key_arn = var.create_kms_key ? module.kms.key_arn : encryption_config.value.provider_key_arn
+        key_arn = var.eks.create_kms_key ? module.kms.key_arn : encryption_config.value.provider_key_arn
       }
       resources = encryption_config.value.resources
     }
   }
 
   tags = merge(
-    var.tags,
-    var.cluster_tags,
+    var.eks.tags,
+    var.eks.cluster_tags,
   )
 
   timeouts {
-    create = lookup(var.cluster_timeouts, "create", null)
-    update = lookup(var.cluster_timeouts, "update", null)
-    delete = lookup(var.cluster_timeouts, "delete", null)
+    create = lookup(var.eks.cluster_timeouts, "create", null)
+    update = lookup(var.eks.cluster_timeouts, "update", null)
+    delete = lookup(var.eks.cluster_timeouts, "delete", null)
   }
 
   depends_on = [
@@ -68,8 +68,8 @@ resource "aws_ec2_tag" "cluster_primary_security_group" {
   # Ref: https://github.com/terraform-aws-modules/terraform-aws-eks/pull/2006
   # Ref: https://github.com/terraform-aws-modules/terraform-aws-eks/pull/2008
   # `aws_default_tags` is merged in to "dedupe" tags and stabilize tag updates
-  for_each = { for k, v in merge(var.tags, var.cluster_tags, data.aws_default_tags.current.tags) :
-    k => v if local.create && k != "Name" && var.create_cluster_primary_security_group_tags
+  for_each = { for k, v in merge(var.eks.tags, var.eks.cluster_tags, data.aws_default_tags.current.tags) :
+    k => v if local.create && k != "Name" && var.eks.create_cluster_primary_security_group_tags
   }
 
   resource_id = aws_eks_cluster.this[0].vpc_config[0].cluster_security_group_id
@@ -78,13 +78,13 @@ resource "aws_ec2_tag" "cluster_primary_security_group" {
 }
 
 resource "aws_cloudwatch_log_group" "this" {
-  count = local.create && var.create_cloudwatch_log_group ? 1 : 0
+  count = local.create && var.eks.create_cloudwatch_log_group ? 1 : 0
 
-  name              = "/aws/eks/${var.cluster_name}/cluster"
-  retention_in_days = var.cloudwatch_log_group_retention_in_days
-  kms_key_id        = var.cloudwatch_log_group_kms_key_id
+  name              = "/aws/eks/${var.eks.cluster_name}/cluster"
+  retention_in_days = var.eks.cloudwatch_log_group_retention_in_days
+  kms_key_id        = var.eks.cloudwatch_log_group_kms_key_id
 
-  tags = var.tags
+  tags = var.eks.tags
 }
 
 ################################################################################
@@ -95,26 +95,26 @@ module "kms" {
   source  = "terraform-aws-modules/kms/aws"
   version = "1.0.2" # Note - be mindful of Terraform/provider version compatibility between modules
 
-  create = local.create && var.create_kms_key
+  create = local.create && var.eks.create_kms_key
 
-  description             = coalesce(var.kms_key_description, "${var.cluster_name} cluster encryption key")
+  description             = coalesce(var.eks.kms_key_description, "${var.eks.cluster_name} cluster encryption key")
   key_usage               = "ENCRYPT_DECRYPT"
-  deletion_window_in_days = var.kms_key_deletion_window_in_days
-  enable_key_rotation     = var.enable_kms_key_rotation
+  deletion_window_in_days = var.eks.kms_key_deletion_window_in_days
+  enable_key_rotation     = var.eks.enable_kms_key_rotation
 
   # Policy
-  enable_default_policy     = var.kms_key_enable_default_policy
-  key_owners                = var.kms_key_owners
-  key_administrators        = coalescelist(var.kms_key_administrators, [data.aws_caller_identity.current.arn])
-  key_users                 = concat([local.cluster_role], var.kms_key_users)
-  key_service_users         = var.kms_key_service_users
-  source_policy_documents   = var.kms_key_source_policy_documents
-  override_policy_documents = var.kms_key_override_policy_documents
+  enable_default_policy     = var.eks.kms_key_enable_default_policy
+  key_owners                = var.eks.kms_key_owners
+  key_administrators        = coalescelist(var.eks.kms_key_administrators, [data.aws_caller_identity.current.arn])
+  key_users                 = concat([local.cluster_role], var.eks.kms_key_users)
+  key_service_users         = var.eks.kms_key_service_users
+  source_policy_documents   = var.eks.kms_key_source_policy_documents
+  override_policy_documents = var.eks.kms_key_override_policy_documents
 
   # Aliases
-  aliases = concat(["eks/${var.cluster_name}"], var.kms_key_aliases)
+  aliases = concat(["eks/${var.eks.cluster_name}"], var.eks.kms_key_aliases)
 
-  tags = var.tags
+  tags = var.eks.tags
 }
 
 ################################################################################
@@ -123,10 +123,10 @@ module "kms" {
 ################################################################################
 
 locals {
-  cluster_sg_name   = coalesce(var.cluster_security_group_name, "${var.cluster_name}-cluster")
-  create_cluster_sg = local.create && var.create_cluster_security_group
+  cluster_sg_name   = coalesce(var.eks.cluster_security_group_name, "${var.eks.cluster_name}-cluster")
+  create_cluster_sg = local.create && var.eks.create_cluster_security_group
 
-  cluster_security_group_id = local.create_cluster_sg ? aws_security_group.cluster[0].id : var.cluster_security_group_id
+  cluster_security_group_id = local.create_cluster_sg ? aws_security_group.cluster[0].id : var.eks.cluster_security_group_id
 
   # Do not add rules to node security group if the module is not creating it
   cluster_security_group_rules = local.create_node_sg ? {
@@ -160,15 +160,15 @@ locals {
 resource "aws_security_group" "cluster" {
   count = local.create_cluster_sg ? 1 : 0
 
-  name        = var.cluster_security_group_use_name_prefix ? null : local.cluster_sg_name
-  name_prefix = var.cluster_security_group_use_name_prefix ? "${local.cluster_sg_name}${var.prefix_separator}" : null
-  description = var.cluster_security_group_description
-  vpc_id      = var.vpc_id
+  name        = var.eks.cluster_security_group_use_name_prefix ? null : local.cluster_sg_name
+  name_prefix = var.eks.cluster_security_group_use_name_prefix ? "${local.cluster_sg_name}${var.eks.prefix_separator}" : null
+  description = var.eks.cluster_security_group_description
+  vpc_id      = var.eks.vpc_id
 
   tags = merge(
-    var.tags,
+    var.eks.tags,
     { "Name" = local.cluster_sg_name },
-    var.cluster_security_group_tags
+    var.eks.cluster_security_group_tags
   )
 
   lifecycle {
@@ -177,7 +177,7 @@ resource "aws_security_group" "cluster" {
 }
 
 resource "aws_security_group_rule" "cluster" {
-  for_each = { for k, v in merge(local.cluster_security_group_rules, var.cluster_security_group_additional_rules) : k => v if local.create_cluster_sg }
+  for_each = { for k, v in merge(local.cluster_security_group_rules, var.eks.cluster_security_group_additional_rules) : k => v if local.create_cluster_sg }
 
   # Required
   security_group_id = aws_security_group.cluster[0].id
@@ -204,21 +204,21 @@ resource "aws_security_group_rule" "cluster" {
 ################################################################################
 
 data "tls_certificate" "this" {
-  count = local.create && var.enable_irsa ? 1 : 0
+  count = local.create && var.eks.enable_irsa ? 1 : 0
 
   url = aws_eks_cluster.this[0].identity[0].oidc[0].issuer
 }
 
 resource "aws_iam_openid_connect_provider" "oidc_provider" {
-  count = local.create && var.enable_irsa ? 1 : 0
+  count = local.create && var.eks.enable_irsa ? 1 : 0
 
-  client_id_list  = distinct(compact(concat(["sts.${local.dns_suffix}"], var.openid_connect_audiences)))
-  thumbprint_list = concat([data.tls_certificate.this[0].certificates[0].sha1_fingerprint], var.custom_oidc_thumbprints)
+  client_id_list  = distinct(compact(concat(["sts.${local.dns_suffix}"], var.eks.openid_connect_audiences)))
+  thumbprint_list = concat([data.tls_certificate.this[0].certificates[0].sha1_fingerprint], var.eks.custom_oidc_thumbprints)
   url             = aws_eks_cluster.this[0].identity[0].oidc[0].issuer
 
   tags = merge(
-    { Name = "${var.cluster_name}-eks-irsa" },
-    var.tags
+    { Name = "${var.eks.cluster_name}-eks-irsa" },
+    var.eks.tags
   )
 }
 
@@ -227,19 +227,19 @@ resource "aws_iam_openid_connect_provider" "oidc_provider" {
 ################################################################################
 
 locals {
-  create_iam_role   = local.create && var.create_iam_role
-  iam_role_name     = coalesce(var.iam_role_name, "${var.cluster_name}-cluster")
+  create_iam_role   = local.create && var.eks.create_iam_role
+  iam_role_name     = coalesce(var.eks.iam_role_name, "${var.eks.cluster_name}-cluster")
   policy_arn_prefix = "arn:${data.aws_partition.current.partition}:iam::aws:policy"
 
-  cluster_encryption_policy_name = coalesce(var.cluster_encryption_policy_name, "${local.iam_role_name}-ClusterEncryption")
+  cluster_encryption_policy_name = coalesce(var.eks.cluster_encryption_policy_name, "${local.iam_role_name}-ClusterEncryption")
 
   # TODO - hopefully this can be removed once the AWS endpoint is named properly in China
   # https://github.com/terraform-aws-modules/terraform-aws-eks/issues/1904
-  dns_suffix = coalesce(var.cluster_iam_role_dns_suffix, data.aws_partition.current.dns_suffix)
+  dns_suffix = coalesce(var.eks.cluster_iam_role_dns_suffix, data.aws_partition.current.dns_suffix)
 }
 
 data "aws_iam_policy_document" "assume_role_policy" {
-  count = local.create && var.create_iam_role ? 1 : 0
+  count = local.create && var.eks.create_iam_role ? 1 : 0
 
   statement {
     sid     = "EKSClusterAssumeRole"
@@ -255,13 +255,13 @@ data "aws_iam_policy_document" "assume_role_policy" {
 resource "aws_iam_role" "this" {
   count = local.create_iam_role ? 1 : 0
 
-  name        = var.iam_role_use_name_prefix ? null : local.iam_role_name
-  name_prefix = var.iam_role_use_name_prefix ? "${local.iam_role_name}${var.prefix_separator}" : null
-  path        = var.iam_role_path
-  description = var.iam_role_description
+  name        = var.eks.iam_role_use_name_prefix ? null : local.iam_role_name
+  name_prefix = var.eks.iam_role_use_name_prefix ? "${local.iam_role_name}${var.eks.prefix_separator}" : null
+  path        = var.eks.iam_role_path
+  description = var.eks.iam_role_description
 
   assume_role_policy    = data.aws_iam_policy_document.assume_role_policy[0].json
-  permissions_boundary  = var.iam_role_permissions_boundary
+  permissions_boundary  = var.eks.iam_role_permissions_boundary
   force_detach_policies = true
 
   # https://github.com/terraform-aws-modules/terraform-aws-eks/issues/920
@@ -270,7 +270,7 @@ resource "aws_iam_role" "this" {
   # ability for the cluster role to create the log group prevents this log group from being re-created
   # outside of Terraform due to services still generating logs during destroy process
   dynamic "inline_policy" {
-    for_each = var.create_cloudwatch_log_group ? [1] : []
+    for_each = var.eks.create_cloudwatch_log_group ? [1] : []
     content {
       name = local.iam_role_name
 
@@ -287,7 +287,7 @@ resource "aws_iam_role" "this" {
     }
   }
 
-  tags = merge(var.tags, var.iam_role_tags)
+  tags = merge(var.eks.tags, var.eks.iam_role_tags)
 }
 
 # Policies attached ref https://docs.aws.amazon.com/eks/latest/userguide/service_IAM_role.html
@@ -295,7 +295,7 @@ resource "aws_iam_role_policy_attachment" "this" {
   for_each = local.create_iam_role ? toset(compact(distinct(concat([
     "${local.policy_arn_prefix}/AmazonEKSClusterPolicy",
     "${local.policy_arn_prefix}/AmazonEKSVPCResourceController",
-  ], var.iam_role_additional_policies)))) : toset([])
+  ], var.eks.iam_role_additional_policies)))) : toset([])
 
   policy_arn = each.value
   role       = aws_iam_role.this[0].name
@@ -303,19 +303,19 @@ resource "aws_iam_role_policy_attachment" "this" {
 
 # Using separate attachment due to `The "for_each" value depends on resource attributes that cannot be determined until apply`
 resource "aws_iam_role_policy_attachment" "cluster_encryption" {
-  count = local.create_iam_role && var.attach_cluster_encryption_policy && length(var.cluster_encryption_config) > 0 ? 1 : 0
+  count = local.create_iam_role && var.eks.attach_cluster_encryption_policy && length(var.eks.cluster_encryption_config) > 0 ? 1 : 0
 
   policy_arn = aws_iam_policy.cluster_encryption[0].arn
   role       = aws_iam_role.this[0].name
 }
 
 resource "aws_iam_policy" "cluster_encryption" {
-  count = local.create_iam_role && var.attach_cluster_encryption_policy && length(var.cluster_encryption_config) > 0 ? 1 : 0
+  count = local.create_iam_role && var.eks.attach_cluster_encryption_policy && length(var.eks.cluster_encryption_config) > 0 ? 1 : 0
 
-  name        = var.cluster_encryption_policy_use_name_prefix ? null : local.cluster_encryption_policy_name
-  name_prefix = var.cluster_encryption_policy_use_name_prefix ? local.cluster_encryption_policy_name : null
-  description = var.cluster_encryption_policy_description
-  path        = var.cluster_encryption_policy_path
+  name        = var.eks.cluster_encryption_policy_use_name_prefix ? null : local.cluster_encryption_policy_name
+  name_prefix = var.eks.cluster_encryption_policy_use_name_prefix ? local.cluster_encryption_policy_name : null
+  description = var.eks.cluster_encryption_policy_description
+  path        = var.eks.cluster_encryption_policy_path
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -328,12 +328,12 @@ resource "aws_iam_policy" "cluster_encryption" {
           "kms:DescribeKey",
         ]
         Effect   = "Allow"
-        Resource = var.create_kms_key ? [module.kms.key_arn] : [for config in var.cluster_encryption_config : config.provider_key_arn]
+        Resource = var.eks.create_kms_key ? [module.kms.key_arn] : [for config in var.eks.cluster_encryption_config : config.provider_key_arn]
       },
     ]
   })
 
-  tags = merge(var.tags, var.cluster_encryption_policy_tags)
+  tags = merge(var.eks.tags, var.eks.cluster_encryption_policy_tags)
 }
 
 ################################################################################
@@ -341,7 +341,7 @@ resource "aws_iam_policy" "cluster_encryption" {
 ################################################################################
 
 resource "aws_eks_addon" "this" {
-  for_each = { for k, v in var.cluster_addons : k => v if local.create }
+  for_each = { for k, v in var.eks.cluster_addons : k => v if local.create }
 
   cluster_name = aws_eks_cluster.this[0].name
   addon_name   = try(each.value.name, each.key)
@@ -356,7 +356,7 @@ resource "aws_eks_addon" "this" {
     module.self_managed_node_group,
   ]
 
-  tags = var.tags
+  tags = var.eks.tags
 }
 
 ################################################################################
@@ -365,7 +365,7 @@ resource "aws_eks_addon" "this" {
 ################################################################################
 
 resource "aws_eks_identity_provider_config" "this" {
-  for_each = { for k, v in var.cluster_identity_providers : k => v if local.create }
+  for_each = { for k, v in var.eks.cluster_identity_providers : k => v if local.create }
 
   cluster_name = aws_eks_cluster.this[0].name
 
@@ -380,7 +380,7 @@ resource "aws_eks_identity_provider_config" "this" {
     username_prefix               = lookup(each.value, "username_prefix", null)
   }
 
-  tags = var.tags
+  tags = var.eks.tags
 }
 
 ################################################################################
@@ -393,7 +393,7 @@ locals {
       concat(
         [for group in module.eks_managed_node_group : group.iam_role_arn],
         [for group in module.self_managed_node_group : group.iam_role_arn if group.platform != "windows"],
-        var.aws_auth_node_iam_role_arns_non_windows,
+        var.eks.aws_auth_node_iam_role_arns_non_windows,
       )
     )
   )
@@ -402,7 +402,7 @@ locals {
     compact(
       concat(
         [for group in module.self_managed_node_group : group.iam_role_arn if group.platform == "windows"],
-        var.aws_auth_node_iam_role_arns_windows,
+        var.eks.aws_auth_node_iam_role_arns_windows,
       )
     )
   )
@@ -411,7 +411,7 @@ locals {
     compact(
       concat(
         [for group in module.fargate_profile : group.fargate_profile_pod_execution_role_arn],
-        var.aws_auth_fargate_profile_pod_execution_role_arns,
+        var.eks.aws_auth_fargate_profile_pod_execution_role_arns,
       )
     )
   )
@@ -448,15 +448,15 @@ locals {
         ]
         }
       ],
-      var.aws_auth_roles
+      var.eks.aws_auth_roles
     ))
-    mapUsers    = yamlencode(var.aws_auth_users)
-    mapAccounts = yamlencode(var.aws_auth_accounts)
+    mapUsers    = yamlencode(var.eks.aws_auth_users)
+    mapAccounts = yamlencode(var.eks.aws_auth_accounts)
   }
 }
 
 resource "kubernetes_config_map" "aws_auth" {
-  count = var.create && var.create_aws_auth_configmap ? 1 : 0
+  count = var.eks.create && var.eks.create_aws_auth_configmap ? 1 : 0
 
   metadata {
     name      = "aws-auth"
@@ -473,7 +473,7 @@ resource "kubernetes_config_map" "aws_auth" {
 }
 
 resource "kubernetes_config_map_v1_data" "aws_auth" {
-  count = var.create && var.manage_aws_auth_configmap ? 1 : 0
+  count = var.eks.create && var.eks.manage_aws_auth_configmap ? 1 : 0
 
   force = true
 
