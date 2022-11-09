@@ -13,18 +13,6 @@ files_to_process = [
         'destination_file': 'variables.tf',
         'variable_name': 'eks',
         'description': 'AWS EKS resources to be created'
-    },
-    {
-        'source_file': 'modules/eks-managed-node-group/variables.tf.orig',
-        'destination_file': 'modules/eks-managed-node-group/variables.tf',
-        'variable_name': 'eks_managed_node_group',
-        'description': 'AWS EKS managed node group resources to be created'
-    },
-    {
-        'source_file': 'modules/self-managed-node-group/variables.tf.orig',
-        'destination_file': 'modules/self-managed-node-group/variables.tf',
-        'variable_name': 'self_managed_node_group',
-        'description': 'AWS EKS self managed node group resources to be created'
     }
 ]
 
