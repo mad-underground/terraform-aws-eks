@@ -6,22 +6,12 @@ files_to_process = [
     {
         'source_file': 'main.tf.orig',
         'destination_file': 'main.tf',
-        'variable_name': 'vpc'
+        'variable_name': 'eks'
     },
     {
-        'source_file': 'vpc-flow-logs.tf.orig',
-        'destination_file': 'vpc-flow-logs.tf',
-        'variable_name': 'vpc'
-    },
-    {
-        'source_file': 'outputs.tf.orig',
-        'destination_file': 'outputs.tf',
-        'variable_name': 'vpc'
-    },
-    {
-        'source_file': 'modules/vpc-endpoints/main.tf.orig',
-        'destination_file': 'modules/vpc-endpoints/main.tf',
-        'variable_name': 'vpc_endpoints'
+        'source_file': 'node_groups.tf.orig',
+        'destination_file': 'node_groups.tf',
+        'variable_name': 'eks'
     }
 ]
 
