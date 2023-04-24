@@ -201,6 +201,10 @@ resource "aws_security_group" "node" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes = [
+      tags,
+      tags_all
+    ]
   }
 }
 
