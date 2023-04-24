@@ -32,6 +32,18 @@ files_to_process = [
         'module_source': 'eks_managed_node_group_module_source',
         'module_version': 'eks_module_version',
         'add_for_each': True
+    },
+    {
+        'source_var_file': 'modules/karpenter/variables.tf',
+        'destination_path': 'modules/mu/karpenter',
+        'destination_var_file': 'variables.tf',
+        'destination_main_file': 'main.tf',
+        'variable_name': 'karpenter',
+        'description': 'Node provisioning for Kubernetes',
+        'module_name': 'eks_karpenter',
+        'module_source': 'eks_karpenter_source',
+        'module_version': 'eks_karpenter_version',
+        'add_for_each': False
     }
 ]
 
