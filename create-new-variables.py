@@ -9,6 +9,9 @@ default_regex = re.compile('^default[\s]*=[\s]*(.*)$')
 validation_regex = re.compile('^validation[\s]*\{[\s]*$')
 end_regex = re.compile('^.*\}$')
 
+module_source = 'terraform-aws-modules/eks/aws'
+module_version = '20.0.0'
+
 files_to_process = [
     {
         'source_var_file': 'variables.tf',
@@ -17,10 +20,11 @@ files_to_process = [
         'destination_main_file': 'main.tf',
         'variable_name': 'cluster',
         'description': 'AWS EKS cluster resources to be created',
-        'module_name': 'aws_eks',
-        'module_source': 'eks_module_source',
-        'module_version': 'eks_module_version',
-        'add_for_each': False
+        'module_name': 'eks',
+        'module_source': module_source,
+        'module_version': module_version,
+        'add_for_each': False,
+        'add_count': True
     },
     {
         'source_var_file': 'modules/eks-managed-node-group/variables.tf',
@@ -30,8 +34,8 @@ files_to_process = [
         'variable_name': 'eks_managed_node_groups',
         'description': 'AWS EKS managed node group to be created',
         'module_name': 'eks_managed_node_group',
-        'module_source': 'eks_managed_node_group_module_source',
-        'module_version': 'eks_module_version',
+        'module_source': f'{module_source}//modules/eks-managed-node-group',
+        'module_version': module_version,
         'add_for_each': True
     },
     {
@@ -42,8 +46,8 @@ files_to_process = [
         'variable_name': 'self_managed_node_groups',
         'description': 'AWS EKS self managed node group to be created',
         'module_name': 'self_managed_node_group',
-        'module_source': 'self_managed_node_group_module_source',
-        'module_version': 'eks_module_version',
+        'module_source': f'{module_source}//modules/self-managed-node-group',
+        'module_version': module_version,
         'add_for_each': True
     },
     {
@@ -54,8 +58,8 @@ files_to_process = [
         'variable_name': 'karpenter',
         'description': 'Node provisioning for Kubernetes',
         'module_name': 'eks_karpenter',
-        'module_source': 'eks_karpenter_source',
-        'module_version': 'eks_karpenter_version',
+        'module_source': module_source,
+        'module_version': module_version,
         'add_for_each': False
     }
 ]
@@ -146,8 +150,9 @@ def main():
         keys.sort()
         with open(dest_main_file, 'w') as write_main_f:
             write_main_f.write(f'module "{file["module_name"]}" {{\n')
-            write_main_f.write(f'  source = "${{local.{file["module_source"]}}}"\n')
-            write_main_f.write(f'  version = "${{local.{file["module_version"]}}}"\n\n')
+            write_main_f.write(f'  source = "{file["module_source"]}"\n')
+            write_main_f.write(f'  version = "{file["module_version"]}"\n\n')
+            if file.get('add_count', False): write_main_f.write(f'  count = try(local.{file["variable_name"]}.create, false) ? 1 : 0\n\n')
             if file["add_for_each"]:
                 write_main_f.write(f'  for_each = local.{file["variable_name"]}\n\n')
             for k in keys:
